@@ -5,6 +5,7 @@ import {
   createPatient,
   updatePatient,
   findOrCreatePatientByContact,
+  deletePatient,
 } from '../services/patients.js';
 import { listSimulations } from '../services/simulations.js';
 
@@ -71,6 +72,20 @@ export function createPatientsRouter(requireAuth) {
     } catch (e) {
       console.error(e);
       res.status(500).json({ message: 'Erro ao atualizar paciente' });
+    }
+  });
+
+  r.delete('/patients/:id', async (req, res) => {
+    try {
+      const result = await deletePatient(req.userId, req.params.id);
+      if (result.error) {
+        res.status(result.status || 400).json({ message: result.error });
+        return;
+      }
+      res.status(204).send();
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: 'Erro ao excluir paciente' });
     }
   });
 

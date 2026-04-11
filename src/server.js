@@ -8,6 +8,10 @@ import { createProceduresRouter } from './routes/procedures.js';
 import { createPatientsRouter } from './routes/patients.js';
 import { createSimulationsRouter } from './routes/simulations.js';
 import { createDashboardRouter } from './routes/dashboard.js';
+import { createEnhancePostRouter } from './routes/enhance.js';
+import { createEnhancePairsRouter } from './routes/enhancePairs.js';
+import { createSubscriptionsRouter } from './routes/subscriptions.js';
+import { stripeWebhookHandler } from './routes/stripeWebhook.js';
 import { seedProceduresIfEmpty } from './services/procedures.js';
 
 const PORT = Number(process.env.PORT) || 3001;
@@ -30,6 +34,15 @@ app.use(
     credentials: true,
   }),
 );
+
+app.post(
+  '/api/stripe/webhook',
+  express.raw({ type: 'application/json' }),
+  (req, res) => {
+    void stripeWebhookHandler(req, res);
+  },
+);
+
 app.use(express.json({ limit: '2mb' }));
 
 const requireAuth = createRequireAuth(JWT_SECRET);
@@ -38,12 +51,16 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true });
 });
 
+app.use(createEnhancePostRouter(requireAuth));
+
+app.use('/api/subscriptions', createSubscriptionsRouter());
 app.use('/api/auth', createAuthRouter(JWT_SECRET));
 app.use('/api', createMeRouter(JWT_SECRET, requireAuth));
 app.use('/api', createProceduresRouter(requireAuth));
 app.use('/api', createPatientsRouter(requireAuth));
 app.use('/api', createSimulationsRouter(requireAuth));
 app.use('/api', createDashboardRouter(requireAuth));
+app.use('/api', createEnhancePairsRouter(requireAuth));
 
 app.use((err, _req, res, _next) => {
   console.error(err);

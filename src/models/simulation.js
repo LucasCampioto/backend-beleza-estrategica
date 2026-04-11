@@ -14,6 +14,8 @@ const simulationSchema = new mongoose.Schema(
     points: { type: Number, default: null },
     costPerPoint: { type: Number, default: null },
     image: { type: String, default: '' },
+    /** UUID do par original/after no R2 (EnhancePair) */
+    enhancePairId: { type: String, default: '' },
     activePointIds: { type: [Number], default: [] },
   },
   { timestamps: true },

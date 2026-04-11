@@ -112,3 +112,12 @@ export async function findOrCreatePatientByContact(userId, { name, email, phone 
   });
   return doc._id;
 }
+
+export async function deletePatient(userId, patientId) {
+  if (!mongoose.isValidObjectId(patientId)) return { error: 'Paciente inválido', status: 400 };
+  const p = await Patient.findOne({ _id: patientId, userId });
+  if (!p) return { error: 'Paciente não encontrado', status: 404 };
+  await Simulation.deleteMany({ userId, patientId: p._id });
+  await Patient.deleteOne({ _id: p._id, userId });
+  return { ok: true };
+}

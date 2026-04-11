@@ -24,6 +24,7 @@ export function simulationToDto(doc) {
     points: doc.points != null ? doc.points : undefined,
     costPerPoint: doc.costPerPoint != null ? doc.costPerPoint : undefined,
     image: doc.image || undefined,
+    enhancePairId: doc.enhancePairId || undefined,
     activePointIds: Array.isArray(doc.activePointIds) && doc.activePointIds.length ? doc.activePointIds : undefined,
   };
 }
@@ -61,6 +62,16 @@ export async function createSimulation(userId, body) {
       email: body.patient.email,
       phone: body.patient.phone,
     });
+  } else if (
+    String(body.patientName || '').trim() ||
+    String(body.patientEmail || '').trim() ||
+    String(body.patientPhone || '').trim()
+  ) {
+    patientObjectId = await findOrCreatePatientByContact(userId, {
+      name: body.patientName,
+      email: body.patientEmail,
+      phone: body.patientPhone,
+    });
   } else {
     return { error: 'Informe patientId ou dados do paciente (patient)', status: 400 };
   }
@@ -71,12 +82,15 @@ export async function createSimulation(userId, body) {
   }
 
   const date = body.date ? new Date(body.date) : new Date();
+  const snapName = String(body.patientName ?? '').trim() || String(patient.name ?? '').trim();
+  const snapPhone = String(body.patientPhone ?? '').trim() || String(patient.phone ?? '').trim();
+  const snapEmail = String(body.patientEmail ?? '').trim() || String(patient.email ?? '').trim();
   const doc = await Simulation.create({
     userId,
     patientId: patientObjectId,
-    patientName: String(body.patientName || patient.name).trim(),
-    patientPhone: String(body.patientPhone ?? patient.phone ?? ''),
-    patientEmail: String(body.patientEmail ?? patient.email ?? ''),
+    patientName: snapName,
+    patientPhone: snapPhone,
+    patientEmail: snapEmail,
     procedure: String(body.procedure || '').trim(),
     procedureId: String(body.procedureId || '').trim(),
     date,
@@ -84,10 +98,18 @@ export async function createSimulation(userId, body) {
     points: body.points != null ? Number(body.points) : null,
     costPerPoint: body.costPerPoint != null ? Number(body.costPerPoint) : null,
     image: trimImage(body.image),
+    enhancePairId: String(body.enhancePairId || '').trim(),
     activePointIds: Array.isArray(body.activePointIds) ? body.activePointIds.map(Number).filter((n) => !Number.isNaN(n)) : [],
   });
 
   await Patient.updateOne({ _id: patientObjectId }, { $set: { lastVisit: date } });
 
   return { simulation: simulationToDto(doc.toObject()) };
+}
+
+export async function deleteSimulation(userId, simulationId) {
+  if (!mongoose.isValidObjectId(simulationId)) return { error: 'Simulação inválida', status: 400 };
+  const doc = await Simulation.findOneAndDelete({ _id: simulationId, userId });
+  if (!doc) return { error: 'Simulação não encontrada', status: 404 };
+  return { ok: true };
 }

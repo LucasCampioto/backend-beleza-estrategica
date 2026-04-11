@@ -9,6 +9,10 @@ const userSchema = new mongoose.Schema(
     phone: { type: String, default: '', trim: true },
     notifEmail: { type: Boolean, default: true },
     notifSms: { type: Boolean, default: false },
+    stripeCustomerId: { type: String, trim: true, sparse: true, unique: true },
+    stripeSubscriptionId: { type: String, trim: true, sparse: true, unique: true },
+    subscriptionStatus: { type: String, default: '', trim: true },
+    trialEndsAt: { type: Date, default: null },
   },
   { timestamps: true },
 );

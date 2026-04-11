@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { listSimulations, createSimulation } from '../services/simulations.js';
+import { listSimulations, createSimulation, deleteSimulation } from '../services/simulations.js';
 
 export function createSimulationsRouter(requireAuth) {
   const r = Router();
@@ -27,6 +27,20 @@ export function createSimulationsRouter(requireAuth) {
     } catch (e) {
       console.error(e);
       res.status(500).json({ message: 'Erro ao criar simulação' });
+    }
+  });
+
+  r.delete('/simulations/:id', async (req, res) => {
+    try {
+      const result = await deleteSimulation(req.userId, req.params.id);
+      if (result.error) {
+        res.status(result.status || 400).json({ message: result.error });
+        return;
+      }
+      res.status(204).send();
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: 'Erro ao excluir simulação' });
     }
   });
 
