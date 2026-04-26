@@ -17,6 +17,8 @@ const simulationSchema = new mongoose.Schema(
     /** UUID do par original/after no R2 (EnhancePair) */
     enhancePairId: { type: String, default: '' },
     activePointIds: { type: [Number], default: [] },
+    /** Indica se a simulação resultou em venda real do procedimento. */
+    saleCompleted: { type: Boolean, default: false },
   },
   { timestamps: true },
 );

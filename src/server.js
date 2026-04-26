@@ -7,6 +7,7 @@ import { createAuthRouter, createMeRouter } from './routes/auth.js';
 import { createProceduresRouter } from './routes/procedures.js';
 import { createPatientsRouter } from './routes/patients.js';
 import { createSimulationsRouter } from './routes/simulations.js';
+import { createPricingBasesRouter } from './routes/pricingBases.js';
 import { createDashboardRouter } from './routes/dashboard.js';
 import { createEnhancePostRouter } from './routes/enhance.js';
 import { createEnhancePairsRouter } from './routes/enhancePairs.js';
@@ -17,7 +18,10 @@ import { seedProceduresIfEmpty } from './services/procedures.js';
 const PORT = Number(process.env.PORT) || 3001;
 const MONGODB_URI = process.env.MONGODB_URI;
 const JWT_SECRET = process.env.JWT_SECRET;
-const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:8080';
+const corsOrigins = (process.env.CORS_ORIGIN || 'http://localhost:8080,http://localhost:8081')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 if (!MONGODB_URI || !JWT_SECRET) {
   console.error('Defina MONGODB_URI e JWT_SECRET no .env');
@@ -30,7 +34,7 @@ await seedProceduresIfEmpty();
 const app = express();
 app.use(
   cors({
-    origin: CORS_ORIGIN,
+    origin: corsOrigins.length === 1 ? corsOrigins[0] : corsOrigins,
     credentials: true,
   }),
 );
@@ -53,12 +57,13 @@ app.get('/health', (_req, res) => {
 
 app.use(createEnhancePostRouter(requireAuth));
 
-app.use('/api/subscriptions', createSubscriptionsRouter());
+app.use('/api/subscriptions', createSubscriptionsRouter(requireAuth));
 app.use('/api/auth', createAuthRouter(JWT_SECRET));
 app.use('/api', createMeRouter(JWT_SECRET, requireAuth));
 app.use('/api', createProceduresRouter(requireAuth));
 app.use('/api', createPatientsRouter(requireAuth));
 app.use('/api', createSimulationsRouter(requireAuth));
+app.use('/api', createPricingBasesRouter(requireAuth));
 app.use('/api', createDashboardRouter(requireAuth));
 app.use('/api', createEnhancePairsRouter(requireAuth));
 

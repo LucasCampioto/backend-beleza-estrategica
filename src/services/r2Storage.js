@@ -197,6 +197,32 @@ export function publicObjectUrl(key) {
  * @param {string} key
  * @param {number} expiresIn segundos
  */
+/**
+ * Lê o objeto do bucket (sem passar por URL pública; evita CORS no download pelo browser).
+ * @param {string} key
+ * @returns {Promise<{ buffer: Buffer, contentType: string }>}
+ */
+export async function getObjectBuffer(key) {
+  const client = getClient();
+  const Bucket = getBucket();
+  if (!client || !Bucket) {
+    throw new Error('R2 não configurado');
+  }
+  const out = await client.send(
+    new GetObjectCommand({ Bucket, Key: key }),
+  );
+  if (!out.Body) {
+    throw new Error('Objeto vazio no R2');
+  }
+  const chunks = [];
+  for await (const chunk of out.Body) {
+    chunks.push(chunk);
+  }
+  const buffer = Buffer.concat(chunks);
+  const contentType = out.ContentType?.trim() || 'application/octet-stream';
+  return { buffer, contentType };
+}
+
 export async function presignedGetUrl(key, expiresIn = 900) {
   const client = getClient();
   const Bucket = getBucket();

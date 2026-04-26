@@ -1,9 +1,45 @@
 import { Router } from 'express';
-import { getPairUrlsForUser } from '../services/enhancePairs.js';
+import { getAfterBufferForUser, getPairUrlsForUser } from '../services/enhancePairs.js';
+
+function extFromContentType(ct) {
+  const s = (ct || '').toLowerCase();
+  if (s.includes('jpeg') || s === 'image/jpg') return 'jpg';
+  if (s.includes('png')) return 'png';
+  if (s.includes('webp')) return 'webp';
+  return 'png';
+}
 
 export function createEnhancePairsRouter(requireAuth) {
   const r = Router();
   r.use(requireAuth);
+
+  /** Download da imagem "depois" via API (evita CORS do fetch direto no R2). */
+  r.get('/enhance-pairs/:pairId/after', async (req, res) => {
+    const pairId = String(req.params.pairId || '').trim();
+    if (!pairId) {
+      res.status(400).json({ message: 'pairId inválido' });
+      return;
+    }
+    try {
+      const out = await getAfterBufferForUser(pairId, req.userId);
+      if (!out) {
+        res.status(404).json({ message: 'Par não encontrado' });
+        return;
+      }
+      const ext = extFromContentType(out.contentType);
+      res.setHeader('Content-Type', out.contentType);
+      res.setHeader('Content-Disposition', `attachment; filename="simulacao.${ext}"`);
+      res.send(out.buffer);
+    } catch (e) {
+      console.error('[R2] GET enhance-pairs/:pairId/after', {
+        pairId,
+        message: e?.message,
+        name: e?.name,
+        code: e?.Code ?? e?.code,
+      });
+      res.status(502).json({ message: 'Falha ao ler a imagem da simulação' });
+    }
+  });
 
   r.get('/enhance-pairs/:pairId', async (req, res) => {
     const pairId = String(req.params.pairId || '').trim();

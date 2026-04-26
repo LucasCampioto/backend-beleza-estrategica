@@ -26,6 +26,7 @@ export function simulationToDto(doc) {
     image: doc.image || undefined,
     enhancePairId: doc.enhancePairId || undefined,
     activePointIds: Array.isArray(doc.activePointIds) && doc.activePointIds.length ? doc.activePointIds : undefined,
+    saleCompleted: doc.saleCompleted === true,
   };
 }
 
@@ -51,6 +52,8 @@ export async function listSimulations(userId, { patientId, procedure, from, to }
 }
 
 export async function createSimulation(userId, body) {
+  /** Crédito já é consumido em POST /v1/enhance ao gerar a IA. Salvar no histórico não debita de novo. */
+
   let patientObjectId = null;
   if (body.patientId && mongoose.isValidObjectId(body.patientId)) {
     const p = await Patient.findOne({ _id: body.patientId, userId });
@@ -112,4 +115,22 @@ export async function deleteSimulation(userId, simulationId) {
   const doc = await Simulation.findOneAndDelete({ _id: simulationId, userId });
   if (!doc) return { error: 'Simulação não encontrada', status: 404 };
   return { ok: true };
+}
+
+/** Atualiza campos permitidos de uma simulação (allowlist: saleCompleted). */
+export async function patchSimulation(userId, simulationId, patch) {
+  if (!mongoose.isValidObjectId(simulationId)) return { error: 'Simulação inválida', status: 400 };
+  const allowed = ['saleCompleted'];
+  const update = {};
+  for (const k of allowed) {
+    if (patch[k] !== undefined) update[k] = patch[k];
+  }
+  if (Object.keys(update).length === 0) return { error: 'Nenhum campo válido para atualizar', status: 400 };
+  const doc = await Simulation.findOneAndUpdate(
+    { _id: simulationId, userId },
+    { $set: update },
+    { new: true },
+  );
+  if (!doc) return { error: 'Simulação não encontrada', status: 404 };
+  return { simulation: simulationToDto(doc.toObject()) };
 }

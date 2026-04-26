@@ -7,7 +7,14 @@ import {
   updateUserStripeFields,
   findUserByStripeSubscriptionId,
 } from './users.js';
-import { sendSubscriptionWelcomeEmail } from './email.js';
+import {
+  sendSubscriptionActivatedForExistingUserEmail,
+  sendSubscriptionWelcomeEmail,
+} from './email.js';
+import {
+  syncUserQuotaFromStripeSubscription,
+  zeroUserQuota,
+} from './simulationQuotas.js';
 
 async function handleCheckoutSessionCompleted(session) {
   if (session.mode !== 'subscription') return;
@@ -19,7 +26,9 @@ async function handleCheckoutSessionCompleted(session) {
   }
 
   const stripe = getStripe();
-  const sub = await stripe.subscriptions.retrieve(String(subscriptionId));
+  const sub = await stripe.subscriptions.retrieve(String(subscriptionId), {
+    expand: ['items.data.price'],
+  });
   const email = String(session.customer_details?.email || session.customer_email || '')
     .toLowerCase()
     .trim();
@@ -41,6 +50,11 @@ async function handleCheckoutSessionCompleted(session) {
       subscriptionStatus: status,
       trialEndsAt,
     });
+    await syncUserQuotaFromStripeSubscription(user._id, sub);
+    await sendSubscriptionActivatedForExistingUserEmail({
+      to: email,
+      loginUrl: process.env.SUBSCRIPTION_WELCOME_LOGIN_URL?.trim() || undefined,
+    });
     return;
   }
 
@@ -50,6 +64,7 @@ async function handleCheckoutSessionCompleted(session) {
     clinic,
     email,
     password: tempPassword,
+    firstAccess: true,
   });
   await updateUserStripeFields(newUser._id, {
     stripeCustomerId: String(customerId),
@@ -57,12 +72,15 @@ async function handleCheckoutSessionCompleted(session) {
     subscriptionStatus: status,
     trialEndsAt,
   });
+  await syncUserQuotaFromStripeSubscription(newUser._id, sub);
   await sendSubscriptionWelcomeEmail({
     to: email,
     tempPassword,
-    loginUrl: undefined,
+    loginUrl: process.env.SUBSCRIPTION_WELCOME_LOGIN_URL?.trim() || undefined,
   });
 }
+
+const TERMINAL_SUBSCRIPTION_STATUSES = new Set(['canceled', 'cancelled', 'unpaid', 'incomplete_expired']);
 
 async function handleSubscriptionUpdated(subscription) {
   const user = await findUserByStripeSubscriptionId(subscription.id);
@@ -75,6 +93,15 @@ async function handleSubscriptionUpdated(subscription) {
     subscriptionStatus: subscription.status,
     trialEndsAt,
   });
+
+  if (TERMINAL_SUBSCRIPTION_STATUSES.has(String(subscription.status || '').toLowerCase())) {
+    await zeroUserQuota(user._id);
+  } else {
+    // Expand may not be present on update events; try to sync if items exist.
+    if (subscription.items?.data?.length) {
+      await syncUserQuotaFromStripeSubscription(user._id, subscription);
+    }
+  }
 }
 
 export async function handleStripeEvent(event) {

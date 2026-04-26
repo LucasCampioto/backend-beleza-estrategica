@@ -5,6 +5,7 @@ import { forwardEnhanceToAgent } from '../services/enhanceProxy.js';
 import { extractAfterImageBuffer } from '../services/enhancePayload.js';
 import { isR2Configured, putObject, resolveReadUrl } from '../services/r2Storage.js';
 import { createEnhancePairDoc } from '../services/enhancePairs.js';
+import { refundSimulationCredit, tryDebitSimulationCredit } from '../services/simulationQuotas.js';
 
 function extFromMime(mime, filename) {
   const m = String(mime || '').toLowerCase();
@@ -29,6 +30,8 @@ export function createEnhancePostRouter(requireAuth) {
   const r = Router();
 
   r.post('/v1/enhance', requireAuth, async (req, res, next) => {
+    let debited = false;
+    const userId = req.userId;
     try {
       if (req.query.format !== 'json') {
         res.status(400).json({ message: 'Use query format=json' });
@@ -51,6 +54,13 @@ export function createEnhancePostRouter(requireAuth) {
         return;
       }
 
+      const debit = await tryDebitSimulationCredit(userId);
+      if (!debit.ok) {
+        res.status(debit.status).json({ message: debit.error });
+        return;
+      }
+      debited = true;
+
       const { data: agentData, status } = await forwardEnhanceToAgent(agentBase, {
         buffer: parsed.fileBuffer,
         filename: parsed.filename,
@@ -61,6 +71,8 @@ export function createEnhancePostRouter(requireAuth) {
       });
 
       if (status >= 400) {
+        await refundSimulationCredit(userId);
+        debited = false;
         if (typeof agentData === 'object' && agentData !== null) {
           res.status(status).json(agentData);
         } else {
@@ -71,11 +83,11 @@ export function createEnhancePostRouter(requireAuth) {
 
       const extracted = extractAfterImageBuffer(agentData);
       if (extracted.error) {
+        await refundSimulationCredit(userId);
+        debited = false;
         res.status(502).json({ message: 'Resposta do agente sem imagem em base64' });
         return;
       }
-
-      const userId = req.userId;
       const pairId = randomUUID();
       const origExt = extFromMime(parsed.mime, parsed.filename);
       const afterExt = extFromMime(extracted.mime, null);
@@ -132,6 +144,13 @@ export function createEnhancePostRouter(requireAuth) {
 
       res.json(out);
     } catch (e) {
+      if (debited) {
+        try {
+          await refundSimulationCredit(userId);
+        } catch (re) {
+          console.error('[enhance] refundSimulationCredit após exceção', re?.message);
+        }
+      }
       next(e);
     }
   });
