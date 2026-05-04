@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { isStripeConfigured } from '../services/stripeClient.js';
 import { listPlans } from '../services/subscriptionPlans.js';
 import { createSubscriptionCheckoutSession } from '../services/checkoutSessions.js';
-import { findUserByEmail, findUserById } from '../services/users.js';
+import { findUserByEmail, findUserById, findUserByStripeSubscriptionId } from '../services/users.js';
 import {
   createBillingPortalSessionForUser,
   getCurrentSubscriptionSummary,
@@ -104,6 +104,7 @@ export function createSubscriptionsRouter(requireAuth) {
     }
   });
 
+  /** Só Stripe: sessão paga/complete. Não reflete webhook nem utilizador em MongoDB (use checkout-session/provisioned). */
   r.get('/checkout-session/status', async (req, res) => {
     try {
       if (!isStripeConfigured()) {
@@ -125,6 +126,63 @@ export function createSubscriptionsRouter(requireAuth) {
     } catch (e) {
       console.error('[checkout-session/status]', e?.message ?? e);
       res.json({ subscription: false });
+    }
+  });
+
+  /**
+   * Stripe + MongoDB: utilizador já tem stripeSubscriptionId da sessão (efeito do webhook checkout.session.completed).
+   * Para a página de retorno do embedded checkout — não confundir com /checkout-session/status (só Stripe).
+   */
+  r.get('/checkout-session/provisioned', async (req, res) => {
+    try {
+      if (!isStripeConfigured()) {
+        res.status(503).json({ provisioned: false, phase: 'unavailable' });
+        return;
+      }
+      const sessionId = String(req.query.session_id || '').trim();
+      if (!sessionId.startsWith('cs_') || sessionId.length < 10) {
+        res.status(200).json({ provisioned: false, phase: 'invalid_session' });
+        return;
+      }
+      const stripe = (await import('../services/stripeClient.js')).getStripe();
+      let session;
+      try {
+        session = await stripe.checkout.sessions.retrieve(sessionId);
+      } catch (e) {
+        console.error('[checkout-session/provisioned] retrieve', e?.message ?? e);
+        res.status(200).json({ provisioned: false, phase: 'invalid_session' });
+        return;
+      }
+
+      const paymentOk =
+        session.payment_status === 'paid' || session.payment_status === 'no_payment_required';
+      const checkoutOk = session.mode === 'subscription' && session.status === 'complete' && paymentOk;
+      if (!checkoutOk) {
+        res.status(200).json({ provisioned: false, phase: 'invalid_session' });
+        return;
+      }
+
+      const subRef = session.subscription;
+      const subscriptionId =
+        typeof subRef === 'string' && subRef.trim()
+          ? subRef.trim()
+          : subRef && typeof subRef === 'object' && 'id' in subRef && subRef.id
+            ? String(subRef.id).trim()
+            : '';
+      if (!subscriptionId) {
+        res.status(200).json({ provisioned: false, phase: 'provisioning' });
+        return;
+      }
+
+      const user = await findUserByStripeSubscriptionId(subscriptionId);
+      if (user) {
+        res.json({ provisioned: true });
+        return;
+      }
+      res.json({ provisioned: false, phase: 'provisioning' });
+    } catch (e) {
+      console.error('[checkout-session/provisioned]', e?.message ?? e);
+      res.status(200).json({ provisioned: false, phase: 'provisioning' });
     }
   });
 
