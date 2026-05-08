@@ -16,6 +16,27 @@ async function resolveStripeCustomerId(stripe, email) {
   return activeCustomer ? String(activeCustomer.id) : null;
 }
 
+async function resolvePromotionCodeId(stripe, rawCode) {
+  const code = String(rawCode || '').trim();
+  if (!code) return null;
+  const list = await stripe.promotionCodes.list({ code, limit: 5, active: true });
+  const promo = list.data.find((pc) => pc.active === true && String(pc.code) === code);
+  if (!promo) {
+    throw new Error('Cupom inválido ou inativo');
+  }
+  return promo.id;
+}
+
+/** Se `promotionCode` vem preenchido, aplica esse cupom; senão permite inserir no UI do Stripe. */
+async function buildCheckoutPromoFields(stripe, promotionCode) {
+  const trimmed = String(promotionCode || '').trim();
+  if (trimmed) {
+    const id = await resolvePromotionCodeId(stripe, trimmed);
+    return { discounts: [{ promotion_code: id }] };
+  }
+  return { allow_promotion_codes: true };
+}
+
 /**
  * @param {object} params
  * @param {string} params.email
@@ -24,6 +45,9 @@ async function resolveStripeCustomerId(stripe, email) {
  * @param {string} params.priceId
  * @param {number} [params.trialPeriodDays]
  * @param {'hosted'|'embedded'} [params.checkoutUi]
+ * @param {boolean} [params.skipTrial] — se true, não envia trial_period_days (ex.: upgrade parceiro)
+ * @param {string} [params.stripeCustomerId] — customer existente (Mongo); tem prioridade sobre busca por e-mail
+ * @param {string} [params.promotionCode] — código promocional Stripe (opcional)
  */
 export async function createSubscriptionCheckoutSession({
   email,
@@ -32,6 +56,9 @@ export async function createSubscriptionCheckoutSession({
   priceId,
   trialPeriodDays,
   checkoutUi = 'hosted',
+  skipTrial = false,
+  stripeCustomerId: linkedStripeCustomerId = null,
+  promotionCode = null,
 }) {
   const allowed = await isAllowedPriceId(priceId);
   if (!allowed) {
@@ -40,7 +67,15 @@ export async function createSubscriptionCheckoutSession({
 
   const stripe = getStripe();
   const normalizedEmail = normalizeEmail(email);
-  const customerId = await resolveStripeCustomerId(stripe, normalizedEmail);
+  if (!normalizedEmail) {
+    throw new Error('E-mail inválido');
+  }
+
+  let customerId = linkedStripeCustomerId != null ? String(linkedStripeCustomerId).trim() : '';
+  if (!customerId) {
+    customerId = (await resolveStripeCustomerId(stripe, normalizedEmail)) || '';
+  }
+
   const metadata = {
     app_user_name: String(name || '').trim() || 'Usuário',
     app_user_clinic: String(clinic || '').trim(),
@@ -49,9 +84,11 @@ export async function createSubscriptionCheckoutSession({
   const subscriptionData = {
     metadata: { ...metadata },
   };
-  const trial = trialPeriodDays != null ? Number(trialPeriodDays) : NaN;
-  if (Number.isFinite(trial) && trial > 0) {
-    subscriptionData.trial_period_days = Math.min(Math.floor(trial), 730);
+  if (!skipTrial) {
+    const trial = trialPeriodDays != null ? Number(trialPeriodDays) : NaN;
+    if (Number.isFinite(trial) && trial > 0) {
+      subscriptionData.trial_period_days = Math.min(Math.floor(trial), 730);
+    }
   }
 
   const baseParams = {
@@ -66,6 +103,8 @@ export async function createSubscriptionCheckoutSession({
     baseParams.customer_email = normalizedEmail;
   }
 
+  const promoFields = await buildCheckoutPromoFields(stripe, promotionCode);
+
   if (checkoutUi === 'embedded') {
     const returnUrl = process.env.STRIPE_RETURN_URL;
     if (!returnUrl || !returnUrl.includes('{CHECKOUT_SESSION_ID}')) {
@@ -75,6 +114,7 @@ export async function createSubscriptionCheckoutSession({
     }
     const session = await stripe.checkout.sessions.create({
       ...baseParams,
+      ...promoFields,
       ui_mode: 'embedded',
       return_url: returnUrl,
     });
@@ -93,6 +133,7 @@ export async function createSubscriptionCheckoutSession({
 
   const session = await stripe.checkout.sessions.create({
     ...baseParams,
+    ...promoFields,
     success_url: successUrl,
     cancel_url: cancelUrl,
   });

@@ -51,6 +51,12 @@ async function handleCheckoutSessionCompleted(session) {
       trialEndsAt,
     });
     await syncUserQuotaFromStripeSubscription(user._id, sub);
+    if (String(user.accountType || '') === 'partner_test') {
+      await updateUserStripeFields(user._id, {
+        accountType: 'official',
+        partnerTestExpiresAt: null,
+      });
+    }
     await sendSubscriptionActivatedForExistingUserEmail({
       to: email,
       loginUrl: process.env.SUBSCRIPTION_WELCOME_LOGIN_URL?.trim() || undefined,

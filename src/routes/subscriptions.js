@@ -38,7 +38,7 @@ export function createSubscriptionsRouter(requireAuth) {
         res.status(503).json({ message: 'Pagamentos não configurados (STRIPE_SECRET_KEY)' });
         return;
       }
-      const { email, name, clinic, priceId, trialPeriodDays, checkoutUi } = req.body || {};
+      const { email, name, clinic, priceId, trialPeriodDays, checkoutUi, promotionCode } = req.body || {};
       if (!email || !name || !priceId) {
         res.status(400).json({ message: 'email, name e priceId são obrigatórios' });
         return;
@@ -69,6 +69,7 @@ export function createSubscriptionsRouter(requireAuth) {
         priceId,
         trialPeriodDays: effectiveTrialPeriodDays,
         checkoutUi: ui,
+        promotionCode,
       });
 
       if (ui === 'embedded') {
@@ -98,6 +99,83 @@ export function createSubscriptionsRouter(requireAuth) {
       }
       if (msg.includes('STRIPE_RETURN_URL')) {
         res.status(503).json({ message: msg });
+        return;
+      }
+      if (msg.includes('Cupom')) {
+        res.status(400).json({ message: msg });
+        return;
+      }
+      res.status(500).json({ message: 'Erro ao criar sessão de pagamento' });
+    }
+  });
+
+  /** Parceiro/influenciador: ativa plano pago sem período trial (utilizador já autenticado). */
+  r.post('/checkout-official', requireAuth, async (req, res) => {
+    try {
+      if (!isStripeConfigured()) {
+        res.status(503).json({ message: 'Pagamentos não configurados (STRIPE_SECRET_KEY)' });
+        return;
+      }
+      const user = await findUserById(req.userId);
+      if (!user) {
+        res.status(404).json({ message: 'Usuário não encontrado' });
+        return;
+      }
+      if (String(user.accountType || '') !== 'partner_test') {
+        res.status(403).json({ message: 'Disponível apenas para contas parceiro (teste)' });
+        return;
+      }
+      if (String(user.stripeSubscriptionId || '').trim()) {
+        res.status(409).json({ message: 'Conta já possui assinatura ativa ou em processamento' });
+        return;
+      }
+      const { priceId, checkoutUi, promotionCode } = req.body || {};
+      if (!priceId) {
+        res.status(400).json({ message: 'priceId é obrigatório' });
+        return;
+      }
+      const ui = checkoutUi === 'embedded' ? 'embedded' : 'hosted';
+      const linkedCust = String(user.stripeCustomerId || '').trim() || null;
+      const result = await createSubscriptionCheckoutSession({
+        email: user.email,
+        name: user.name,
+        clinic: user.clinic,
+        priceId,
+        checkoutUi: ui,
+        skipTrial: true,
+        stripeCustomerId: linkedCust,
+        promotionCode,
+      });
+      if (ui === 'embedded') {
+        if (!result.clientSecret) {
+          res.status(500).json({ message: 'Sessão embedded sem client_secret' });
+          return;
+        }
+        res.status(201).json({ clientSecret: result.clientSecret, sessionId: result.sessionId });
+        return;
+      }
+      if (!result.url) {
+        res.status(500).json({ message: 'Sessão de checkout sem URL' });
+        return;
+      }
+      res.status(201).json({ url: result.url, sessionId: result.sessionId });
+    } catch (e) {
+      console.error(e);
+      const msg = e.message || 'Erro ao criar checkout';
+      if (msg.includes('inválido') || msg.includes('indisponível')) {
+        res.status(400).json({ message: msg });
+        return;
+      }
+      if (msg.includes('STRIPE_SUCCESS_URL') || msg.includes('STRIPE_CANCEL_URL')) {
+        res.status(503).json({ message: msg });
+        return;
+      }
+      if (msg.includes('STRIPE_RETURN_URL')) {
+        res.status(503).json({ message: msg });
+        return;
+      }
+      if (msg.includes('Cupom')) {
+        res.status(400).json({ message: msg });
         return;
       }
       res.status(500).json({ message: 'Erro ao criar sessão de pagamento' });

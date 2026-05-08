@@ -1,4 +1,7 @@
 import { User } from '../models/user.js';
+import { isPartnerTestAppLocked } from './partnerTestAccess.js';
+
+const PARTNER_LOCK_MSG = 'Período de teste encerrado. Contrate um plano em Configurações para continuar.';
 
 // Timezone used to compute the YYYY-MM period key (e.g. first day of a new month
 // in Brazil may already be the last of the previous month in UTC).
@@ -46,6 +49,9 @@ export function getMonthlyQuotaForPriceId(priceId) {
 // monthly quota and update the period key. Writes to DB only when needed.
 // Accepts either an in-memory Mongoose document or a plain userId (will fetch).
 export async function applyQuotaPeriodResetIfNeeded(userDoc) {
+  if (userDoc && String(userDoc.accountType || '') === 'partner_test') {
+    return userDoc;
+  }
   const periodKey = getCurrentQuotaPeriodKey();
   if (!userDoc || String(userDoc.simulationQuotaPeriodKey || '') === periodKey) return userDoc;
 
@@ -100,6 +106,10 @@ export async function zeroUserQuota(userId) {
 export async function tryDebitSimulationCredit(userId) {
   let userDoc = await User.findById(userId).lean();
   if (!userDoc) return { ok: false, error: 'Usuário não encontrado', status: 404 };
+
+  if (isPartnerTestAppLocked(userDoc)) {
+    return { ok: false, error: PARTNER_LOCK_MSG, status: 403, code: 'PARTNER_TEST_LOCKED' };
+  }
 
   if (String(userDoc.simulationQuotaPeriodKey || '') !== getCurrentQuotaPeriodKey()) {
     userDoc = await applyQuotaPeriodResetIfNeeded(userDoc);

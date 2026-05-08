@@ -29,3 +29,14 @@ O seed de **procedimentos** roda automaticamente na subida se a collection estiv
 - `GET /api/procedures`, CRUD pacientes, simulações, `GET /api/dashboard/summary`
 
 Health: `GET /health`
+
+## Contas parceiro (teste) e cupons Stripe
+
+- **Admin:** defina `ADMIN_API_KEY` (string longa e secreta). Com header `x-admin-key: <valor>`, pode criar contas parceiro:
+  - `POST /api/admin/partner-users` — body JSON: `email`, `name`, opcional `clinic`, `password`, `simulationCredits` (default 10), `partnerTestExpiresAt` (ISO) ou `partnerTestDurationDays` (número de dias a partir da criação). Sem `password`, é gerada senha temporária e enviado e-mail (se Resend configurado).
+- Contas com `accountType: partner_test` têm cota fixa de simulações (sem renovação mensal automática) até contratarem plano pago.
+- **Bloqueio (app + API):** sem `stripeSubscriptionId`, a conta parceira fica bloqueada para rotas operacionais quando `simulationCreditsRemaining <= 0` ou quando `partnerTestExpiresAt` já passou (instante UTC). Resposta **403** com `code: 'PARTNER_TEST_LOCKED'` (exceto `GET/PATCH /api/me`, `POST /api/subscriptions/checkout-official`, `GET /api/subscriptions/current`, `POST /api/subscriptions/portal`, planos e checkout público).
+- **`STRIPE_RETURN_URL`:** para checkout **embedded** iniciado na **app de gestão**, use a URL dessa app, ex. `http://localhost:8080/configuracoes/assinatura?session_id={CHECKOUT_SESSION_ID}` (ajuste host/porta).
+- **Upgrade sem trial:** utilizador parceiro autenticado: `POST /api/subscriptions/checkout-official` com `priceId` e opcional `promotionCode` e `checkoutUi` (`embedded` ou `hosted`). Após o webhook, a conta passa a `official` e quotas seguem o plano Stripe.
+- **Cupons:** crie *Coupons* e *Promotion codes* no [Dashboard Stripe](https://dashboard.stripe.com). No checkout público (`POST /api/subscriptions/checkout`), campo opcional `promotionCode` aplica o código; se omitido, o Stripe Checkout exibe campo para cupom (`allow_promotion_codes`).
+- Nunca commite `ADMIN_API_KEY` nem partilhe em clients públicos.

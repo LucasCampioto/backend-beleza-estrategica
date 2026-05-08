@@ -12,6 +12,9 @@ import { createDashboardRouter } from './routes/dashboard.js';
 import { createEnhancePostRouter } from './routes/enhance.js';
 import { createEnhancePairsRouter } from './routes/enhancePairs.js';
 import { createSubscriptionsRouter } from './routes/subscriptions.js';
+import { createAdminRouter } from './routes/admin.js';
+import { createRequireAdmin } from './middleware/admin.js';
+import { createPartnerTestLockGuard } from './middleware/partnerTestLock.js';
 import { stripeWebhookHandler } from './routes/stripeWebhook.js';
 import { seedProceduresIfEmpty } from './services/procedures.js';
 
@@ -50,6 +53,9 @@ app.post(
 app.use(express.json({ limit: '2mb' }));
 
 const requireAuth = createRequireAuth(JWT_SECRET);
+const requireAdmin = createRequireAdmin();
+const partnerTestLockGuard = createPartnerTestLockGuard(JWT_SECRET);
+app.use(partnerTestLockGuard);
 
 app.get('/health', (_req, res) => {
   res.json({ ok: true });
@@ -57,6 +63,7 @@ app.get('/health', (_req, res) => {
 
 app.use(createEnhancePostRouter(requireAuth));
 
+app.use('/api/admin', createAdminRouter(requireAdmin));
 app.use('/api/subscriptions', createSubscriptionsRouter(requireAuth));
 app.use('/api/auth', createAuthRouter(JWT_SECRET));
 app.use('/api', createMeRouter(JWT_SECRET, requireAuth));

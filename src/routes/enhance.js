@@ -56,7 +56,9 @@ export function createEnhancePostRouter(requireAuth) {
 
       const debit = await tryDebitSimulationCredit(userId);
       if (!debit.ok) {
-        res.status(debit.status).json({ message: debit.error });
+        const body = { message: debit.error };
+        if (debit.code) body.code = debit.code;
+        res.status(debit.status).json(body);
         return;
       }
       debited = true;

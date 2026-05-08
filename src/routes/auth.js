@@ -138,6 +138,8 @@ export function createAuthRouter(jwtSecret) {
  * Quem pode mudar: webhooks, jobs, serviço interno — não o cliente/Postman.
  */
 const PATCH_ME_FORBIDDEN_KEYS = new Set([
+  'accountType',
+  'partnerTestExpiresAt',
   'simulationMonthlyQuota',
   'simulationCreditsRemaining',
   'simulationQuotaPeriodKey',

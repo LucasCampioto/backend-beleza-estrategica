@@ -80,6 +80,30 @@ export async function sendPasswordResetEmail({ to, resetUrl }) {
   await sendEmail({ to, subject, text });
 }
 
+export async function sendPartnerTestWelcomeEmail({ to, tempPassword, loginUrl }) {
+  const url = loginUrl || loginUrlDefault();
+  const subject = 'Sua conta parceiro aviva.ai';
+  const text = [
+    'Olá!',
+    '',
+    'Sua conta de teste (parceiro) na aviva.ai foi criada. Você pode explorar a plataforma com um número limitado de simulações. Para contratar um plano oficial com cobrança recorrente, use a opção de ativar assinatura no aplicativo (checkout sem período grátis).',
+    '',
+    'Dados para o primeiro acesso:',
+    '',
+    `E-mail: ${to}`,
+    `Senha temporária: ${tempPassword}`,
+    '',
+    `Link para entrar: ${url}`,
+    '',
+    'Recomendamos alterar a senha após o login.',
+    '',
+    'Um abraço,',
+    'Equipe aviva.ai',
+  ].join('\n');
+
+  await sendEmail({ to, subject, text });
+}
+
 export async function sendSubscriptionActivatedForExistingUserEmail({ to, loginUrl }) {
   const url = loginUrl || loginUrlDefault();
   const subject = 'Sua assinatura aviva.ai está ativa';

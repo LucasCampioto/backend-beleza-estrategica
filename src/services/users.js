@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto';
 import bcrypt from 'bcryptjs';
 import { User } from '../models/user.js';
 import { applyQuotaPeriodResetIfNeeded } from './simulationQuotas.js';
@@ -13,10 +14,27 @@ export function userToPublic(doc) {
     firstAccess: doc.firstAccess === true,
     simulationCreditsRemaining: doc.simulationCreditsRemaining ?? 0,
     simulationMonthlyQuota: doc.simulationMonthlyQuota ?? 0,
+    accountType: doc.accountType === 'partner_test' ? 'partner_test' : 'official',
   };
   if (doc.subscriptionStatus) out.subscriptionStatus = doc.subscriptionStatus;
   if (doc.trialEndsAt) out.trialEndsAt = doc.trialEndsAt.toISOString();
+  if (doc.partnerTestExpiresAt) out.partnerTestExpiresAt = doc.partnerTestExpiresAt.toISOString();
   return out;
+}
+
+function resolvePartnerTestExpiresAt({ partnerTestExpiresAt, partnerTestDurationDays }) {
+  const raw = partnerTestExpiresAt != null ? String(partnerTestExpiresAt).trim() : '';
+  if (raw) {
+    const d = new Date(raw);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+  const days = Number(partnerTestDurationDays);
+  if (Number.isFinite(days) && days > 0) {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() + Math.floor(days));
+    return d;
+  }
+  return null;
 }
 
 // Same as findUserById but applies a lazy monthly quota reset before returning.
@@ -100,6 +118,55 @@ export async function updateUserStripeFields(userId, fields) {
   if (fields.stripeSubscriptionId !== undefined) set.stripeSubscriptionId = String(fields.stripeSubscriptionId || '').trim();
   if (fields.subscriptionStatus !== undefined) set.subscriptionStatus = String(fields.subscriptionStatus || '').trim();
   if (fields.trialEndsAt !== undefined) set.trialEndsAt = fields.trialEndsAt;
+  if (fields.accountType !== undefined) set.accountType = fields.accountType;
+  if (fields.partnerTestExpiresAt !== undefined) set.partnerTestExpiresAt = fields.partnerTestExpiresAt;
   if (Object.keys(set).length === 0) return User.findById(userId);
   return User.findByIdAndUpdate(userId, { $set: set }, { new: true });
+}
+
+/**
+ * Cont parceiro: cota fixa (sem reposição mensal), sem Stripe até upgrade.
+ * @param {object} opts
+ * @param {string} opts.name
+ * @param {string} opts.email
+ * @param {string} [opts.clinic]
+ * @param {string} [opts.password] — se omitido, gera temporária
+ * @param {number} [opts.simulationCredits=10]
+ * @param {string} [opts.partnerTestExpiresAt] — ISO
+ * @param {number} [opts.partnerTestDurationDays] — dias a partir de agora (UTC)
+ */
+export async function createPartnerTestUser({
+  name,
+  clinic,
+  email,
+  password,
+  simulationCredits = 10,
+  partnerTestExpiresAt,
+  partnerTestDurationDays,
+}) {
+  const raw = Number(simulationCredits);
+  const credits = Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : 10;
+  const pwd =
+    password != null && String(password).length > 0
+      ? String(password)
+      : randomBytes(18).toString('base64url');
+  const passwordHash = await bcrypt.hash(pwd, 10);
+  const e = String(email).toLowerCase().trim();
+  const expiresAt = resolvePartnerTestExpiresAt({ partnerTestExpiresAt, partnerTestDurationDays });
+  const user = await User.create({
+    email: e,
+    passwordHash,
+    name: String(name).trim(),
+    clinic: String(clinic || '').trim(),
+    phone: '',
+    notifEmail: true,
+    notifSms: false,
+    firstAccess: true,
+    accountType: 'partner_test',
+    simulationMonthlyQuota: 0,
+    simulationCreditsRemaining: credits,
+    simulationQuotaPeriodKey: '',
+    partnerTestExpiresAt: expiresAt,
+  });
+  return { user, plainPassword: password != null && String(password).length > 0 ? null : pwd };
 }
