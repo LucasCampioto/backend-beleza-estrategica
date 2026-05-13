@@ -70,6 +70,8 @@ export function createEnhancePostRouter(requireAuth) {
         tipos: parsed.tipos,
         regioes: parsed.regioes,
         intensidade: parsed.intensidade,
+        practiceProfile: parsed.practiceProfile || undefined,
+        detalhes: parsed.detalhes && String(parsed.detalhes).trim() ? String(parsed.detalhes).trim() : undefined,
       });
 
       if (status >= 400) {

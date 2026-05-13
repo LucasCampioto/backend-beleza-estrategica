@@ -3,7 +3,7 @@ import busboy from 'busboy';
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
 
 /**
- * Parseia multipart do mesmo formato do front (image + tipo_procedimento repetido + regioes + intensidade).
+ * Parseia multipart do mesmo formato do front (image + tipo_procedimento repetido + regioes + intensidade + practice_profile opcional).
  * @param {import('express').Request} req
  */
 export function parseEnhanceMultipart(req) {
@@ -11,6 +11,8 @@ export function parseEnhanceMultipart(req) {
     const tipos = [];
     let regioes = '';
     let intensidade = '';
+    let practiceProfile = '';
+    let detalhes = '';
     /** @type {Buffer | null} */
     let fileBuffer = null;
     let filename = 'upload.jpg';
@@ -46,6 +48,10 @@ export function parseEnhanceMultipart(req) {
         regioes = String(val ?? '');
       } else if (name === 'intensidade') {
         intensidade = String(val ?? '');
+      } else if (name === 'practice_profile') {
+        practiceProfile = String(val ?? '').trim();
+      } else if (name === 'detalhes') {
+        detalhes = String(val ?? '');
       }
     });
 
@@ -57,6 +63,8 @@ export function parseEnhanceMultipart(req) {
         tipos,
         regioes,
         intensidade,
+        practiceProfile,
+        detalhes,
       });
     });
 

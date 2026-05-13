@@ -4,7 +4,7 @@ import FormData from 'form-data';
 /**
  * Encaminha o mesmo multipart ao agente.
  * @param {string} agentBaseUrl
- * @param {{ buffer: Buffer, filename: string, mime: string, tipos: string[], regioes: string, intensidade: string }} parts
+ * @param {{ buffer: Buffer, filename: string, mime: string, tipos: string[], regioes: string, intensidade: string, practiceProfile?: string, detalhes?: string }} parts
  */
 export async function forwardEnhanceToAgent(agentBaseUrl, parts) {
   const base = String(agentBaseUrl || '').replace(/\/$/, '');
@@ -18,6 +18,10 @@ export async function forwardEnhanceToAgent(agentBaseUrl, parts) {
   }
   fd.append('regioes', parts.regioes || '');
   fd.append('intensidade', parts.intensidade || 'moderado');
+  const pp = parts.practiceProfile && String(parts.practiceProfile).trim();
+  if (pp) fd.append('practice_profile', pp);
+  const det = parts.detalhes != null ? String(parts.detalhes) : '';
+  if (det.trim()) fd.append('detalhes', det.trim());
 
   const url = `${base}/v1/enhance?format=json`;
   const response = await axios.post(url, fd, {
